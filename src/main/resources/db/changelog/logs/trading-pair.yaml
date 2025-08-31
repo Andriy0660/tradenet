@@ -1,0 +1,47 @@
+databaseChangeLog:
+  - changeSet:
+      id: trading-pairs-table
+      author: Andrii Snovyda
+      changes:
+        - createTable:
+            tableName: trading_pairs
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: symbol
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: min_price
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: max_price
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: level_percentage
+                  type: DECIMAL(10,5)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: stop_loss_percentage
+                  type: DECIMAL(10,5)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

@@ -1,0 +1,5 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/logs/trading-pair.yaml
+  - include:
+      file: db/changelog/logs/position.yaml

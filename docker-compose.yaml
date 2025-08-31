@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16.3
+    container_name: tradenet-postgres
+    environment:
+      POSTGRES_DB: tradenet
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports:
+      - "5460:5432"
+    networks:
+      - tradenet-network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: tradenet-postgres-data
+
+networks:
+  tradenet-network:
+    name: tradenet-network

@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-positions-table
+      author: Andrii Snovyda
+      changes:
+        - createTable:
+            tableName: positions
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: trading_pair_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_positions_trading_pair
+                    references: trading_pairs(id)
+              - column:
+                  name: grid_level
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_price
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_price
+                  type: DECIMAL(19,8)
+              - column:
+                  name: stop_loss_price
+                  type: DECIMAL(19,8)
+              - column:
+                  name: take_profit_price
+                  type: DECIMAL(19,8)
+              - column:
+                  name: opened_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: closed_at
+                  type: TIMESTAMP
