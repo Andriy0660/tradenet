@@ -25,6 +25,9 @@ public class TradingService {
     private final BinanceService binanceService;
 
     public void processLevelCrossing(TradingPairEntity pair, BigDecimal currentPrice, BigDecimal newLevel, BigDecimal prevLevel) {
+        if (prevLevel == null) {
+            return;
+        }
         log.info("Processing level crossing for {}: {} -> Level {}",
                  pair.getSymbol(), currentPrice, newLevel);
 
