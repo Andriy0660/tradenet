@@ -12,5 +12,10 @@ public interface PositionRepository extends JpaRepository<PositionEntity, Long> 
     @Query("SELECT p FROM PositionEntity p WHERE p.tradingPair.symbol = :symbol AND p.takeProfitPrice = :level AND p.status = 'OPEN'")
     List<PositionEntity> findOpenPositionsWithTakeProfitAt(@Param("symbol") String symbol, @Param("level") BigDecimal level);
 
-    @Query("SELECT COUNT(p) > 0 FROM PositionEntity p WHERE p.tradingPair.symbol = :symbol AND p.gridLevel = :level AND p.type = :type AND p.status = 'OPEN'")
-    boolean existsOpenPositionAtLevel(@Param("symbol") String symbol, @Param("level") BigDecimal level, @Param("type") PositionType type);}
+    @Query("SELECT COUNT(p) > 0 FROM PositionEntity p WHERE p.tradingPair.symbol = :symbol AND p.gridLevelPrice = :level AND p.type = :type AND p.status = 'OPEN'")
+    boolean existsOpenPositionAtLevel(@Param("symbol") String symbol, @Param("level") BigDecimal level, @Param("type") PositionType type);
+
+    @Query("SELECT COUNT(p) > 0 FROM PositionEntity p WHERE p.tradingPair.symbol = :symbol AND p.status = 'OPEN'")
+    boolean existsByTradingPairSymbol(@Param("symbol") String symbol);
+
+}

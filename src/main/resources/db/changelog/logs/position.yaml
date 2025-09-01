@@ -21,7 +21,7 @@ databaseChangeLog:
                     foreignKeyName: fk_positions_trading_pair
                     references: trading_pairs(id)
               - column:
-                  name: grid_level
+                  name: grid_level_price
                   type: DECIMAL(19,8)
                   constraints:
                     nullable: false

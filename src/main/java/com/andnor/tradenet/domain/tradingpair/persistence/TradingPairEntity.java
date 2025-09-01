@@ -29,17 +29,17 @@ public class TradingPairEntity {
     @Column(name = "symbol")
     private String symbol;
 
-    @Column(name = "min_price")
-    private BigDecimal minPrice;
+    @Column(name = "start_price")
+    private BigDecimal startPrice;
 
-    @Column(name = "max_price")
-    private BigDecimal maxPrice;
+    @Column(name = "grid_level_percentage")
+    private BigDecimal gridLevelPercentage;
 
-    @Column(name = "level_percentage")
-    private BigDecimal levelPercentage;
+    @Column(name = "long_stop_loss_percentage")
+    private BigDecimal longStopLossPercentage;
 
-    @Column(name = "stop_loss_percentage")
-    private BigDecimal stopLossPercentage;
+    @Column(name = "short_stop_loss_percentage")
+    private BigDecimal shortStopLossPercentage;
 
     @Column(name = "is_active")
     private boolean isActive;

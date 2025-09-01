@@ -24,19 +24,19 @@ public class TradingService {
     private final PositionRepository positionRepository;
     private final BinanceService binanceService;
 
-    public void processLevelCrossing(TradingPairEntity pair, BigDecimal currentPrice, BigDecimal newLevel, BigDecimal prevLevel) {
-        if (prevLevel == null) {
+    public void processLevelCrossing(TradingPairEntity pair, BigDecimal currentPrice, BigDecimal newLevelPrice, BigDecimal prevLevelPrice) {
+        if (prevLevelPrice == null) {
             return;
         }
         log.info("Processing level crossing for {}: {} -> Level {}",
-                 pair.getSymbol(), currentPrice, newLevel);
+                 pair.getSymbol(), currentPrice, newLevelPrice);
 
-        LevelClosingResult levelClosingResult = closeTakeProfitPositions(pair, newLevel);
+        LevelClosingResult levelClosingResult = closeTakeProfitPositions(pair, newLevelPrice);
 
-        boolean isUpward = newLevel.compareTo(prevLevel) > 0;
+        boolean isUpward = newLevelPrice.compareTo(prevLevelPrice) > 0;
 
-        AlgorithmAction action = determineAction(pair, newLevel, isUpward, levelClosingResult);
-        executeAction(pair, newLevel, isUpward, action);
+        AlgorithmAction action = determineAction(pair, newLevelPrice, isUpward, levelClosingResult);
+        executeAction(pair, newLevelPrice, isUpward, action);
     }
 
     private LevelClosingResult closeTakeProfitPositions(TradingPairEntity pair, BigDecimal level) {
@@ -65,15 +65,17 @@ public class TradingService {
         return result;
     }
 
-    private AlgorithmAction determineAction(TradingPairEntity pair, BigDecimal level,
+    private AlgorithmAction determineAction(TradingPairEntity pair, BigDecimal newLevelPrice,
                                             boolean isUpward, LevelClosingResult closingResult) {
 
-        boolean hasOpenTrendPosition = hasOpenTrendPosition(pair, level, isUpward);
+        boolean hasAnyOpenPositions = positionRepository.existsByTradingPairSymbol(pair.getSymbol());
+        boolean hasOpenTrendPosition = hasOpenTrendPosition(pair, newLevelPrice, isUpward);
         int totalClosedPositions = closingResult.getClosedLongPositions() + closingResult.getClosedShortPositions();
         boolean hadTakeProfitClosing = totalClosedPositions > 0;
         boolean hadTrendPositionClosed = hasTrendPositionBeenClosed(closingResult, isUpward);
 
-        if (hadTrendPositionClosed && !hasOpenTrendPosition) {
+        // TODO clarify about !hasAnyOpenPositions action
+        if (!hasAnyOpenPositions || (hadTrendPositionClosed && !hasOpenTrendPosition)) {
             return AlgorithmAction.OPEN_TREND_POSITION;
         } else if (!hadTakeProfitClosing && hasOpenTrendPosition) {
             return AlgorithmAction.OPEN_COUNTER_TREND_POSITION;
@@ -90,25 +92,25 @@ public class TradingService {
         }
     }
 
-    private void executeAction(TradingPairEntity pair, BigDecimal level, boolean isUpward, AlgorithmAction action) {
+    private void executeAction(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward, AlgorithmAction action) {
         switch (action) {
             case OPEN_TREND_POSITION:
-                openTrendPosition(pair, level, isUpward);
+                openTrendPosition(pair, newLevelPrice, isUpward);
                 break;
             case OPEN_COUNTER_TREND_POSITION:
-                openCounterTrendPosition(pair, level, isUpward);
+                openCounterTrendPosition(pair, newLevelPrice, isUpward);
                 break;
             case DO_NOTHING:
-                log.info("No action needed for {} at level {}", pair.getSymbol(), level);
+                log.info("No action needed for {} at level {}", pair.getSymbol(), newLevelPrice);
                 break;
         }
     }
 
-    private void openTrendPosition(TradingPairEntity pair, BigDecimal level, boolean isUpward) {
+    private void openTrendPosition(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward) {
         PositionType positionType = isUpward ? PositionType.LONG : PositionType.SHORT;
-        BigDecimal takeProfitLevel = calculateNextLevel(pair, level, isUpward);
+        BigDecimal takeProfitLevelPrice = calculateNextLevel(pair, newLevelPrice, isUpward);
 
-        PositionEntity position = createPosition(pair, level, positionType, takeProfitLevel);
+        PositionEntity position = createPosition(pair, newLevelPrice, positionType, takeProfitLevelPrice);
         positionRepository.save(position);
 
         if (isUpward) {
@@ -120,11 +122,11 @@ public class TradingService {
         positionRepository.save(position);
     }
 
-    private void openCounterTrendPosition(TradingPairEntity pair, BigDecimal level, boolean isUpward) {
+    private void openCounterTrendPosition(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward) {
         PositionType positionType = isUpward ? PositionType.SHORT : PositionType.LONG;
-        BigDecimal takeProfitLevel = calculatePreviousLevel(pair, level, isUpward);
+        BigDecimal takeProfitLevelPrice = calculatePreviousLevel(pair, newLevelPrice, isUpward);
 
-        PositionEntity position = createPosition(pair, level, positionType, takeProfitLevel);
+        PositionEntity position = createPosition(pair, newLevelPrice, positionType, takeProfitLevelPrice);
         positionRepository.save(position);
 
         if (isUpward) {
@@ -136,24 +138,28 @@ public class TradingService {
         positionRepository.save(position);
     }
 
-    private boolean hasOpenTrendPosition(TradingPairEntity pair, BigDecimal level, boolean isUpward) {
+    private boolean hasOpenTrendPosition(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward) {
         PositionType trendType = isUpward ? PositionType.LONG : PositionType.SHORT;
-        return positionRepository.existsOpenPositionAtLevel(pair.getSymbol(), level, trendType);
+        return positionRepository.existsOpenPositionAtLevel(pair.getSymbol(), newLevelPrice, trendType);
     }
 
-    private PositionEntity createPosition(TradingPairEntity pair, BigDecimal gridLevel, PositionType type, BigDecimal tpLevel) {
+    private PositionEntity createPosition(TradingPairEntity pair, BigDecimal gridLevelPrice, PositionType type, BigDecimal tpLevelPrice) {
+        BigDecimal stopLossPercentage = type == PositionType.LONG ? pair.getLongStopLossPercentage() : pair.getShortStopLossPercentage();
+        BigDecimal stopLoss = calculateStopLoss(gridLevelPrice, type, stopLossPercentage);
         return PositionEntity.builder()
                 .tradingPair(pair)
-                .gridLevel(gridLevel)
+                .gridLevelPrice(gridLevelPrice)
                 .type(type)
                 .status(PositionStatus.OPEN)
-                .startPrice(gridLevel)
-                .stopLossPrice(calculateStopLoss(gridLevel, type, pair.getStopLossPercentage()))
+                .startPrice(gridLevelPrice)
+                .stopLossPrice(calculateStopLoss(gridLevelPrice, type, stopLoss))
+                .takeProfitPrice(tpLevelPrice)
                 .openedAt(Instant.now())
                 .build();
     }
 
 
+    // TODO clarify entryPrice
     private BigDecimal calculateStopLoss(BigDecimal entryPrice, PositionType type, BigDecimal slPercentage) {
         BigDecimal slAmount = entryPrice.multiply(slPercentage).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
         return type == PositionType.LONG ?
@@ -161,13 +167,13 @@ public class TradingService {
                entryPrice.add(slAmount);
     }
 
-    private BigDecimal calculateNextLevel(TradingPairEntity pair, BigDecimal currentLevel, boolean isUpward) {
-        BigDecimal step = currentLevel.multiply(pair.getLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
-        return isUpward ? currentLevel.add(step) : currentLevel.subtract(step);
+    private BigDecimal calculateNextLevel(TradingPairEntity pair, BigDecimal currentLevelPrice, boolean isUpward) {
+        BigDecimal step = pair.getStartPrice().multiply(pair.getGridLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
+        return isUpward ? currentLevelPrice.add(step) : currentLevelPrice.subtract(step);
     }
 
-    private BigDecimal calculatePreviousLevel(TradingPairEntity pair, BigDecimal currentLevel, boolean isUpward) {
-        BigDecimal step = currentLevel.multiply(pair.getLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
-        return isUpward ? currentLevel.subtract(step) : currentLevel.add(step);
+    private BigDecimal calculatePreviousLevel(TradingPairEntity pair, BigDecimal currentLevelPrice, boolean isUpward) {
+        BigDecimal step = pair.getStartPrice().multiply(pair.getGridLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
+        return isUpward ? currentLevelPrice.subtract(step) : currentLevelPrice.add(step);
     }
 }

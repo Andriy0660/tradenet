@@ -20,22 +20,22 @@ databaseChangeLog:
                     nullable: false
                     unique: true
               - column:
-                  name: min_price
+                  name: start_price
                   type: DECIMAL(19,8)
                   constraints:
                     nullable: false
               - column:
-                  name: max_price
-                  type: DECIMAL(19,8)
-                  constraints:
-                    nullable: false
-              - column:
-                  name: level_percentage
+                  name: grid_level_percentage
                   type: DECIMAL(10,5)
                   constraints:
                     nullable: false
               - column:
-                  name: stop_loss_percentage
+                  name: long_stop_loss_percentage
+                  type: DECIMAL(10,5)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: short_stop_loss_percentage
                   type: DECIMAL(10,5)
                   constraints:
                     nullable: false

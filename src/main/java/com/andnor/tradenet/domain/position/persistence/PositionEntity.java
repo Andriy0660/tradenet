@@ -39,8 +39,8 @@ public class PositionEntity {
     @JoinColumn(name = "trading_pair_id")
     private TradingPairEntity tradingPair;
 
-    @Column(name = "grid_level")
-    private BigDecimal gridLevel;
+    @Column(name = "grid_level_price")
+    private BigDecimal gridLevelPrice;
 
     @Column(name = "type")
     @Enumerated(EnumType.STRING)
