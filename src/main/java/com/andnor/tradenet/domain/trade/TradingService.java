@@ -41,7 +41,7 @@ public class TradingService {
 
     private LevelClosingResult closeTakeProfitPositions(TradingPairEntity pair, BigDecimal level) {
         List<PositionEntity> positionsToClose = positionRepository
-                .findOpenPositionsWithTakeProfitAt(pair.getSymbol(), level);
+                .findPositionsToClose(pair.getSymbol(), level);
 
         LevelClosingResult result = new LevelClosingResult();
         result.setLevel(level);
