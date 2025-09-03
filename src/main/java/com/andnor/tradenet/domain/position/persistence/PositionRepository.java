@@ -10,17 +10,24 @@ import java.util.List;
 
 public interface PositionRepository extends JpaRepository<PositionEntity, Long> {
     @Query("SELECT p FROM PositionEntity p " +
-           "WHERE p.tradingPair.symbol = :symbol " +
+           "WHERE p.tradingPair.id = :id " +
            "AND p.status = 'OPEN' " +
            "AND ((p.type = 'LONG' AND p.takeProfitPrice <= :level) " +
            "OR (p.type = 'SHORT' AND p.takeProfitPrice >= :level))")
-    List<PositionEntity> findPositionsToClose(@Param("symbol") String symbol, @Param("level") BigDecimal level);
+    List<PositionEntity> findPositionsToClose(@Param("id") Long id, @Param("level") BigDecimal level);
 
 
-    @Query("SELECT COUNT(p) > 0 FROM PositionEntity p WHERE p.tradingPair.symbol = :symbol AND p.gridLevelPrice = :level AND p.type = :type AND p.status = 'OPEN'")
-    boolean existsOpenPositionAtLevel(@Param("symbol") String symbol, @Param("level") BigDecimal level, @Param("type") PositionType type);
+  @Query("SELECT COUNT(p) > 0 FROM PositionEntity p " +
+          "WHERE p.tradingPair.id = :tradingPairId " +
+          "AND p.status = 'OPEN' " +
+          "AND p.type = :type " +
+          "AND (" +
+          "  (:type = 'LONG' AND p.gridLevelPrice <= :currentLevel) " +
+          "  OR (:type = 'SHORT' AND p.gridLevelPrice >= :currentLevel)" +
+          ")")
+    boolean existsOpenPositionAtLevel(@Param("id") Long id, @Param("level") BigDecimal level, @Param("type") PositionType type);
 
-    @Query("SELECT COUNT(p) > 0 FROM PositionEntity p WHERE p.tradingPair.symbol = :symbol AND p.status = 'OPEN'")
-    boolean existsByTradingPairSymbol(@Param("symbol") String symbol);
+    @Query("SELECT COUNT(p) > 0 FROM PositionEntity p WHERE p.tradingPair.id = :id AND p.status = 'OPEN'")
+    boolean existsByTradingPairId(@Param("id") Long id);
 
 }
