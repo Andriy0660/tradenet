@@ -48,7 +48,7 @@ public class TradingService {
     result.setLevel(level);
 
     for (PositionEntity position : positionsToClose) {
-      binanceService.closePosition(pair.getSymbol());
+      binanceService.closePosition(pair);
       position.setStatus(PositionStatus.CLOSED);
       position.setEndPrice(level);
       position.setClosedAt(Instant.now());
@@ -67,6 +67,10 @@ public class TradingService {
   }
 
   private AlgorithmAction determineAction(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward, LevelClosingResult closingResult) {
+    if (binanceService.getAccountBalance().compareTo(pair.getPositionAmountUsdt()) < 0) {
+      log.info("Not enough balance to open position for {} at level {}", pair.getSymbol(), newLevelPrice);
+      return AlgorithmAction.DO_NOTHING;
+    }
 
     boolean hasAnyOpenPositions = positionRepository.existsByTradingPairId(pair.getId());
     boolean hasOpenTrendPosition = hasOpenTrendPosition(pair, newLevelPrice, isUpward);
@@ -95,9 +99,11 @@ public class TradingService {
   private void executeAction(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward, AlgorithmAction action) {
     switch (action) {
     case OPEN_TREND_POSITION:
+      log.info("Opening trend position for {} at level {}", pair.getSymbol(), newLevelPrice);
       openTrendPosition(pair, newLevelPrice, isUpward);
       break;
     case OPEN_COUNTER_TREND_POSITION:
+      log.info("Opening counter-trend position for {} at level {}", pair.getSymbol(), newLevelPrice);
       openCounterTrendPosition(pair, newLevelPrice, isUpward);
       break;
     case DO_NOTHING:
@@ -114,9 +120,9 @@ public class TradingService {
     positionRepository.save(position);
 
     if (isUpward) {
-      binanceService.openLongPosition(pair.getSymbol());
+      binanceService.openLongPosition(pair);
     } else {
-      binanceService.openShortPosition(pair.getSymbol());
+      binanceService.openShortPosition(pair);
     }
 
     positionRepository.save(position);
@@ -130,9 +136,9 @@ public class TradingService {
     positionRepository.save(position);
 
     if (isUpward) {
-      binanceService.openShortPosition(pair.getSymbol());
+      binanceService.openShortPosition(pair);
     } else {
-      binanceService.openLongPosition(pair.getSymbol());
+      binanceService.openLongPosition(pair);
     }
 
     positionRepository.save(position);

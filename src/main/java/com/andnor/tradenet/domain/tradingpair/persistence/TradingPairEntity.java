@@ -41,6 +41,9 @@ public class TradingPairEntity {
     @Column(name = "short_stop_loss_percentage")
     private BigDecimal shortStopLossPercentage;
 
+    @Column(name = "position_amount_usdt")
+    private BigDecimal positionAmountUsdt;
+
     @Column(name = "is_active")
     private boolean isActive;
 }

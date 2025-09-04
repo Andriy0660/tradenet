@@ -32,7 +32,7 @@ public class TradingThread implements Runnable {
 
     while (running) {
       try {
-        BigDecimal currentPrice = binanceService.getCurrentPrice(tradingPair.getSymbol());
+        BigDecimal currentPrice = binanceService.getCurrentPrice(tradingPair);
 
         if (lastPrice != null && lastPrice.compareTo(currentPrice) != 0) {
           processLevelCrossings(tradingPair, lastPrice, currentPrice);

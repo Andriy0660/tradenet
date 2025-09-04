@@ -25,6 +25,11 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: position_amount_usdt
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
                   name: grid_level_percentage
                   type: DECIMAL(10,5)
                   constraints:

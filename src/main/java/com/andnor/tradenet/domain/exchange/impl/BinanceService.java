@@ -1,19 +1,17 @@
 package com.andnor.tradenet.domain.exchange.impl;
 
 import com.andnor.tradenet.domain.exchange.ExchangeService;
+import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
 import com.binance.connector.futures.client.impl.UMFuturesClientImpl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
+import java.math.RoundingMode;
 import java.util.LinkedHashMap;
-import java.util.Map;
 
 @Service
 @Slf4j
@@ -21,42 +19,11 @@ import java.util.Map;
 public class BinanceService implements ExchangeService {
 
     private final ObjectMapper mapper;
+    private final UMFuturesClientImpl client;
 
-    @Value("${binance.api.key}")
-    private String apiKey;
-
-    @Value("${binance.api.secret}")
-    private String secretKey;
-
-    @Value("${binance.futures.leverage:10}")
-    private Integer defaultLeverage;
-
-    @Value("${binance.futures.margin-type:ISOLATED}")
-    private String marginType;
-
-    @Value("${binance.testnet.enabled:false}")
-    private boolean testnetEnabled;
-
-    private UMFuturesClientImpl client;
-
-    @PostConstruct
-    public void initialize() {
-        try {
-
-            log.info("Initializing Binance production clients");
-
-            // Initialize production clients
-            this.client = new UMFuturesClientImpl(apiKey, secretKey, "https://testnet.binancefuture.com");
-
-            log.info("✅ Binance service initialized successfully");
-
-        } catch (Exception e) {
-            log.error("❌ Failed to initialize Binance service", e);
-            throw new RuntimeException("Binance service initialization failed", e);
-        }
-    }
-
-    public BigDecimal getCurrentPrice(String symbol) {
+    @Override
+    public BigDecimal getCurrentPrice(TradingPairEntity tradingPair) {
+        String symbol = tradingPair.getSymbol();
         LinkedHashMap<String, Object> params = new LinkedHashMap<>();
         params.put("symbol", symbol);
 
@@ -71,50 +38,48 @@ public class BinanceService implements ExchangeService {
         }
     }
 
+    @Override
+    public void openLongPosition(TradingPairEntity tradingPair) {
+        log.info("Opening long position for {}", tradingPair.getSymbol());
 
-    public void openLongPosition(String symbol, BigDecimal usdAmount, BigDecimal stopLoss, BigDecimal takeProfit) {
-        // 1. Відкрити LONG по маркету
+        String symbol = tradingPair.getSymbol();
+        BigDecimal usdAmount = tradingPair.getPositionAmountUsdt();
+        BigDecimal stopLoss = tradingPair.getLongStopLossPercentage()
+                .multiply(tradingPair.getStartPrice())
+                .divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
+
         LinkedHashMap<String, Object> params = new LinkedHashMap<>();
         params.put("symbol", symbol);
         params.put("side", "BUY");
         params.put("type", "MARKET");
-        params.put("quoteOrderQty", usdAmount);   // сума в USDT
+        params.put("quoteOrderQty", usdAmount);
 
         String orderResult = client.account().newOrder(params);
         log.info("Opened LONG {} for {} USDT: {}", symbol, usdAmount, orderResult);
 
-        // 2. Стоп-лосс
         if (stopLoss != null) {
             LinkedHashMap<String, Object> slParams = new LinkedHashMap<>();
             slParams.put("symbol", symbol);
             slParams.put("side", "SELL");
             slParams.put("type", "STOP_MARKET");
             slParams.put("stopPrice", stopLoss.toPlainString());
-            slParams.put("closePosition", "true"); // закриває всю позицію
+            slParams.put("closePosition", "true");
             slParams.put("timeInForce", "GTC");
             String slResult = client.account().newOrder(slParams);
             log.info("Placed STOP LOSS at {} for {}: {}", stopLoss, symbol, slResult);
         }
-
-        // 3. Тейк-профіт
-        if (takeProfit != null) {
-            LinkedHashMap<String, Object> tpParams = new LinkedHashMap<>();
-            tpParams.put("symbol", symbol);
-            tpParams.put("side", "SELL");
-            tpParams.put("type", "TAKE_PROFIT_MARKET");
-            tpParams.put("stopPrice", takeProfit.toPlainString());
-            tpParams.put("closePosition", "true");
-            tpParams.put("timeInForce", "GTC");
-            String tpResult = client.account().newOrder(tpParams);
-            log.info("Placed TAKE PROFIT at {} for {}: {}", takeProfit, symbol, tpResult);
-        }
     }
 
-    /**
-     * Відкрити SHORT на суму (USDT) + SL і TP
-     */
-    public void openShortPosition(String symbol, BigDecimal usdAmount, BigDecimal stopLoss, BigDecimal takeProfit) {
-        // 1. Відкрити SHORT по маркету
+    @Override
+    public void openShortPosition(TradingPairEntity tradingPair) {
+        log.info("Opening short position for {}", tradingPair.getSymbol());
+
+        String symbol = tradingPair.getSymbol();
+        BigDecimal usdAmount = tradingPair.getPositionAmountUsdt();
+        BigDecimal stopLoss = tradingPair.getLongStopLossPercentage()
+                .multiply(tradingPair.getStartPrice())
+                .divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
+
         LinkedHashMap<String, Object> params = new LinkedHashMap<>();
         params.put("symbol", symbol);
         params.put("side", "SELL");
@@ -124,7 +89,6 @@ public class BinanceService implements ExchangeService {
         String orderResult = client.account().newOrder(params);
         log.info("Opened SHORT {} for {} USDT: {}", symbol, usdAmount, orderResult);
 
-        // 2. Стоп-лосс
         if (stopLoss != null) {
             LinkedHashMap<String, Object> slParams = new LinkedHashMap<>();
             slParams.put("symbol", symbol);
@@ -136,30 +100,17 @@ public class BinanceService implements ExchangeService {
             String slResult = client.account().newOrder(slParams);
             log.info("Placed STOP LOSS at {} for {}: {}", stopLoss, symbol, slResult);
         }
-
-        // 3. Тейк-профіт
-        if (takeProfit != null) {
-            LinkedHashMap<String, Object> tpParams = new LinkedHashMap<>();
-            tpParams.put("symbol", symbol);
-            tpParams.put("side", "BUY");
-            tpParams.put("type", "TAKE_PROFIT_MARKET");
-            tpParams.put("stopPrice", takeProfit.toPlainString());
-            tpParams.put("closePosition", "true");
-            tpParams.put("timeInForce", "GTC");
-            String tpResult = client.account().newOrder(tpParams);
-            log.info("Placed TAKE PROFIT at {} for {}: {}", takeProfit, symbol, tpResult);
-        }
     }
 
-    /**
-     * Закрити повністю відкриту позицію (без вказання кількості)
-     */
-    public void closePosition(String symbol) {
+    @Override
+    public void closePosition(TradingPairEntity tradingPair) {
+        String symbol = tradingPair.getSymbol();
+        log.info("Closing position for {}", symbol);
+
         try {
             LinkedHashMap<String, Object> params = new LinkedHashMap<>();
             params.put("symbol", symbol);
 
-            // 1. Дізнаємось відкриту позицію
             String result = client.account().positionInformation(params);
             JsonNode positions = mapper.readTree(result);
 
@@ -186,11 +137,11 @@ public class BinanceService implements ExchangeService {
         }
     }
 
+    @Override
     public BigDecimal getAccountBalance() {
         String result = client.account().futuresAccountBalance(new LinkedHashMap<>());
         try {
             JsonNode node = mapper.readTree(result);
-            // balance повертає масив. Беремо USDT (як приклад).
             for (JsonNode balance : node) {
                 if ("USDT".equals(balance.get("asset").asText())) {
                     BigDecimal free = new BigDecimal(balance.get("balance").asText());
