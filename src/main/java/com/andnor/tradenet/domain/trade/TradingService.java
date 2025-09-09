@@ -7,13 +7,13 @@ import com.andnor.tradenet.domain.position.persistence.PositionEntity;
 import com.andnor.tradenet.domain.position.persistence.PositionRepository;
 import com.andnor.tradenet.domain.trade.model.AlgorithmAction;
 import com.andnor.tradenet.domain.trade.model.LevelClosingResult;
+import com.andnor.tradenet.domain.trade.util.TradeUtils;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 
@@ -48,20 +48,38 @@ public class TradingService {
         result.setLevel(level);
 
         for (PositionEntity position : positionsToClose) {
-            binanceService.closePosition(pair);
-            position.setStatus(PositionStatus.CLOSED);
-            position.setEndPrice(level);
-            position.setClosedAt(Instant.now());
-            positionRepository.save(position);
+            try {
+                binanceService.closePosition(position);
 
-            if (position.getType() == PositionType.LONG) {
-                result.incrementClosedLongPositions();
-            } else {
-                result.incrementClosedShortPositions();
+                position.setStatus(PositionStatus.CLOSED);
+                position.setEndPrice(level);
+                position.setClosedAt(Instant.now());
+                positionRepository.save(position);
+
+                if (position.getType() == PositionType.LONG) {
+                    result.incrementClosedLongPositions();
+                } else {
+                    result.incrementClosedShortPositions();
+                }
+
+                log.info("Successfully closed position {} with profit", position.getId());
+
+            } catch (Exception e) {
+                log.error("Failed to close position {} for pair {} at level {}: {}",
+                          position.getId(), pair.getSymbol(), level, e.getMessage(), e);
+
+                position.setStatus(PositionStatus.ERROR);
+                positionRepository.save(position);
+
+                result.incrementFailedPositions();
             }
-
-            log.info("Closed position {} with profit", position.getId());
         }
+
+        log.info("Completed closing positions for {} at level {}: {} long, {} short closed, {} failed",
+                 pair.getSymbol(), level,
+                 result.getClosedLongPositions(),
+                 result.getClosedShortPositions(),
+                 result.getFailedPositions());
 
         return result;
     }
@@ -78,7 +96,6 @@ public class TradingService {
         boolean hadTakeProfitClosing = totalClosedPositions > 0;
         boolean hadTrendPositionClosed = hasTrendPositionBeenClosed(closingResult, isUpward);
 
-        // TODO clarify about !hasAnyOpenPositions action
         if (!hasAnyOpenPositions || (hadTrendPositionClosed && !hasOpenTrendPosition)) {
             return AlgorithmAction.OPEN_TREND_POSITION;
         } else if (!hadTakeProfitClosing && hasOpenTrendPosition) {
@@ -116,32 +133,36 @@ public class TradingService {
         PositionType positionType = isUpward ? PositionType.LONG : PositionType.SHORT;
         BigDecimal takeProfitLevelPrice = calculateNextLevel(pair, newLevelPrice, isUpward);
 
-        PositionEntity position = createPosition(pair, newLevelPrice, positionType, takeProfitLevelPrice);
-        positionRepository.save(position);
+        try {
+            PositionEntity position = binanceService.openPosition(pair, positionType, newLevelPrice, takeProfitLevelPrice);
+            positionRepository.save(position);
 
-        if (isUpward) {
-            binanceService.openLongPosition(pair);
-        } else {
-            binanceService.openShortPosition(pair);
+            log.info("Successfully opened {} position for {} at level {}",
+                     positionType, pair.getSymbol(), newLevelPrice);
+
+        } catch (Exception e) {
+            log.error("Failed to open {} position for {} at level {}: {}",
+                      positionType, pair.getSymbol(), newLevelPrice, e.getMessage(), e);
+            throw new RuntimeException("Failed to open trend position", e);
         }
-
-        positionRepository.save(position);
     }
 
     private void openCounterTrendPosition(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward) {
         PositionType positionType = isUpward ? PositionType.SHORT : PositionType.LONG;
         BigDecimal takeProfitLevelPrice = calculatePreviousLevel(pair, newLevelPrice, isUpward);
 
-        PositionEntity position = createPosition(pair, newLevelPrice, positionType, takeProfitLevelPrice);
-        positionRepository.save(position);
+        try {
+            PositionEntity position = binanceService.openPosition(pair, positionType, newLevelPrice, takeProfitLevelPrice);
+            positionRepository.save(position);
 
-        if (isUpward) {
-            binanceService.openShortPosition(pair);
-        } else {
-            binanceService.openLongPosition(pair);
+            log.info("Successfully opened counter-trend {} position for {} at level {}",
+                     positionType, pair.getSymbol(), newLevelPrice);
+
+        } catch (Exception e) {
+            log.error("Failed to open counter-trend {} position for {} at level {}: {}",
+                      positionType, pair.getSymbol(), newLevelPrice, e.getMessage(), e);
+            throw new RuntimeException("Failed to open counter-trend position", e);
         }
-
-        positionRepository.save(position);
     }
 
     private boolean hasOpenTrendPosition(TradingPairEntity pair, BigDecimal newLevelPrice, boolean isUpward) {
@@ -149,26 +170,13 @@ public class TradingService {
         return positionRepository.existsOpenPositionAtLevel(pair.getId(), newLevelPrice, trendType);
     }
 
-    private PositionEntity createPosition(TradingPairEntity pair, BigDecimal gridLevelPrice, PositionType type, BigDecimal tpLevelPrice) {
-        BigDecimal stopLossPercentage = type == PositionType.LONG ? pair.getLongStopLossPercentage() : pair.getShortStopLossPercentage();
-        BigDecimal stopLoss = calculateStopLoss(gridLevelPrice, type, stopLossPercentage);
-        return PositionEntity.builder().tradingPair(pair).gridLevelPrice(gridLevelPrice).type(type).status(PositionStatus.OPEN).startPrice(gridLevelPrice)
-                .stopLossPrice(calculateStopLoss(gridLevelPrice, type, stopLoss)).takeProfitPrice(tpLevelPrice).openedAt(Instant.now()).build();
-    }
-
-    // TODO clarify entryPrice
-    private BigDecimal calculateStopLoss(BigDecimal entryPrice, PositionType type, BigDecimal slPercentage) {
-        BigDecimal slAmount = entryPrice.multiply(slPercentage).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
-        return type == PositionType.LONG ? entryPrice.subtract(slAmount) : entryPrice.add(slAmount);
-    }
-
     private BigDecimal calculateNextLevel(TradingPairEntity pair, BigDecimal currentLevelPrice, boolean isUpward) {
-        BigDecimal step = pair.getStartPrice().multiply(pair.getGridLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
+        BigDecimal step = TradeUtils.calculateStep(pair);
         return isUpward ? currentLevelPrice.add(step) : currentLevelPrice.subtract(step);
     }
 
     private BigDecimal calculatePreviousLevel(TradingPairEntity pair, BigDecimal currentLevelPrice, boolean isUpward) {
-        BigDecimal step = pair.getStartPrice().multiply(pair.getGridLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
+        BigDecimal step = TradeUtils.calculateStep(pair);
         return isUpward ? currentLevelPrice.subtract(step) : currentLevelPrice.add(step);
     }
 }

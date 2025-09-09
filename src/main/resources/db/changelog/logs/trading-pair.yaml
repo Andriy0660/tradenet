@@ -22,8 +22,6 @@ databaseChangeLog:
               - column:
                   name: start_price
                   type: DECIMAL(19,8)
-                  constraints:
-                    nullable: false
               - column:
                   name: position_amount_usdt
                   type: DECIMAL(19,8)

@@ -11,6 +11,7 @@ public class LevelClosingResult {
     private BigDecimal level;
     private int closedLongPositions = 0;
     private int closedShortPositions = 0;
+    private int failedPositions = 0;
 
     public void incrementClosedLongPositions() {
         this.closedLongPositions++;
@@ -18,5 +19,9 @@ public class LevelClosingResult {
 
     public void incrementClosedShortPositions() {
         this.closedShortPositions++;
+    }
+
+    public void incrementFailedPositions() {
+        this.failedPositions++;
     }
 }

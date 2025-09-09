@@ -3,6 +3,7 @@ package com.andnor.tradenet.domain.trade.thread;
 import com.andnor.tradenet.domain.exchange.impl.BinanceService;
 import com.andnor.tradenet.domain.trade.TradingService;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
+import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairRepository;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
@@ -14,24 +15,33 @@ public class TradingThread implements Runnable {
     private final TradingPairEntity tradingPair;
     private final BinanceService binanceService;
     private final TradingService tradingService;
+    private final TradingPairRepository tradingPairRepository;
     private volatile boolean running = true;
     private BigDecimal lastPrice;
     private BigDecimal currentLevelPrice;
 
-    public TradingThread(TradingPairEntity tradingPair, BinanceService binanceService, TradingService tradingService) {
+    public TradingThread(TradingPairEntity tradingPair, BinanceService binanceService, TradingService tradingService, TradingPairRepository tradingPairRepository) {
         this.tradingPair = tradingPair;
         this.binanceService = binanceService;
         this.tradingService = tradingService;
+        this.tradingPairRepository = tradingPairRepository;
     }
 
     @Override
     public void run() {
         log.info("Starting trading thread for {}", tradingPair.getSymbol());
+        BigDecimal startPrice = binanceService.getCurrentPrice(tradingPair);
+        tradingPair.setStartPrice(startPrice);
+        tradingPairRepository.save(tradingPair);
+        log.info("Initial start price for {} set to {}", tradingPair.getSymbol(), startPrice);
+
 
         while (running) {
             try {
                 BigDecimal currentPrice = binanceService.getCurrentPrice(tradingPair);
-
+                if (tradingPair.getStartPrice() == null) {
+                    tradingPair.setStartPrice(currentPrice);
+                }
                 if (lastPrice != null && lastPrice.compareTo(currentPrice) != 0) {
                     processLevelCrossings(tradingPair, lastPrice, currentPrice);
                 }

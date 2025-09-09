@@ -28,7 +28,13 @@ public class TradingManager {
 
     @PostConstruct
     public void initializeActiveTrading() {
-        List<TradingPairEntity> activePairs = tradingPairRepository.findByIsActiveTrue();
+        if (!binanceService.isHedgeModeEnabled()) {
+            throw new IllegalStateException(
+                    "Account must be in Hedge Mode to use this trading strategy. " +
+                    "Please enable Hedge Mode in your Binance Futures account settings."
+            );
+        }
+        List<TradingPairEntity> activePairs = tradingPairRepository.findAllByActiveTrue();
         for (TradingPairEntity pair : activePairs) {
             startTrading(pair);
         }
@@ -40,7 +46,7 @@ public class TradingManager {
             return;
         }
 
-        TradingThread tradingThread = new TradingThread(pair, binanceService, tradingService);
+        TradingThread tradingThread = new TradingThread(pair, binanceService, tradingService, tradingPairRepository);
         activeThreads.put(pair.getSymbol(), tradingThread);
         executorService.submit(tradingThread);
 

@@ -26,6 +26,11 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: quantity
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
                   name: type
                   type: VARCHAR(20)
                   constraints:

@@ -18,12 +18,12 @@ public interface PositionRepository extends JpaRepository<PositionEntity, Long> 
 
 
   @Query("SELECT COUNT(p) > 0 FROM PositionEntity p " +
-          "WHERE p.tradingPair.id = :tradingPairId " +
+          "WHERE p.tradingPair.id = :id " +
           "AND p.status = 'OPEN' " +
           "AND p.type = :type " +
           "AND (" +
-          "  (:type = 'LONG' AND p.gridLevelPrice <= :currentLevel) " +
-          "  OR (:type = 'SHORT' AND p.gridLevelPrice >= :currentLevel)" +
+          "  (:type = 'LONG' AND p.gridLevelPrice <= :level) " +
+          "  OR (:type = 'SHORT' AND p.gridLevelPrice >= :level)" +
           ")")
     boolean existsOpenPositionAtLevel(@Param("id") Long id, @Param("level") BigDecimal level, @Param("type") PositionType type);
 

@@ -45,5 +45,5 @@ public class TradingPairEntity {
     private BigDecimal positionAmountUsdt;
 
     @Column(name = "is_active")
-    private boolean isActive;
+    private boolean active;
 }

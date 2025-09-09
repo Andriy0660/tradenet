@@ -42,6 +42,9 @@ public class PositionEntity {
     @Column(name = "grid_level_price")
     private BigDecimal gridLevelPrice;
 
+    @Column(name = "quantity")
+    private BigDecimal quantity;
+
     @Column(name = "type")
     @Enumerated(EnumType.STRING)
     private PositionType type;
