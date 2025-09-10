@@ -31,7 +31,7 @@ public class TradingThread implements Runnable {
     public void run() {
         log.info("Starting trading thread for {}", tradingPair.getSymbol());
         BigDecimal startPrice = binanceService.getCurrentPrice(tradingPair);
-        tradingPair.setStartPrice(startPrice);
+
         tradingPairRepository.save(tradingPair);
         log.info("Initial start price for {} set to {}", tradingPair.getSymbol(), startPrice);
 
