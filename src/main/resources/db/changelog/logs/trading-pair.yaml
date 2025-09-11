@@ -48,3 +48,9 @@ databaseChangeLog:
                   defaultValueBoolean: false
                   constraints:
                     nullable: false
+              - column:
+                  name: leverage
+                  type: INT
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false

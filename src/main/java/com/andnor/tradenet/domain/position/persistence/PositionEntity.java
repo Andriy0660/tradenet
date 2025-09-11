@@ -53,9 +53,6 @@ public class PositionEntity {
     @Enumerated(EnumType.STRING)
     private PositionStatus status;
 
-    @Column(name = "start_price")
-    private BigDecimal startPrice;
-
     @Column(name = "end_price")
     private BigDecimal endPrice;
 

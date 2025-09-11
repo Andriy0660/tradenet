@@ -22,28 +22,31 @@ import java.math.BigDecimal;
 @Entity
 @Table(name = "trading_pairs")
 public class TradingPairEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @Column(name = "symbol")
-    private String symbol;
+  @Column(name = "symbol")
+  private String symbol;
 
-    @Column(name = "start_price")
-    private BigDecimal startPrice;
+  @Column(name = "start_price")
+  private BigDecimal startPrice;
 
-    @Column(name = "grid_level_percentage")
-    private BigDecimal gridLevelPercentage;
+  @Column(name = "grid_level_percentage")
+  private BigDecimal gridLevelPercentage;
 
-    @Column(name = "long_stop_loss_percentage")
-    private BigDecimal longStopLossPercentage;
+  @Column(name = "long_stop_loss_percentage")
+  private BigDecimal longStopLossPercentage;
 
-    @Column(name = "short_stop_loss_percentage")
-    private BigDecimal shortStopLossPercentage;
+  @Column(name = "short_stop_loss_percentage")
+  private BigDecimal shortStopLossPercentage;
 
-    @Column(name = "position_amount_usdt")
-    private BigDecimal positionAmountUsdt;
+  @Column(name = "position_amount_usdt")
+  private BigDecimal positionAmountUsdt;
 
-    @Column(name = "is_active")
-    private boolean active;
+  @Column(name = "is_active")
+  private boolean active;
+
+  @Column(name = "leverage")
+  private Integer leverage;
 }

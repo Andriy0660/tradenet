@@ -13,99 +13,102 @@ import java.math.RoundingMode;
 @Slf4j
 @Getter
 public class TradingThread implements Runnable {
-    private static final long TIME_INTERVAL = 500;
-    private final TradingPairEntity tradingPair;
-    private final BinanceService binanceService;
-    private final TradingService tradingService;
-    private final TradingPairRepository tradingPairRepository;
-    private volatile boolean running = true;
-    private BigDecimal lastPrice;
-    private BigDecimal currentLevelPrice;
+  private static final long TIME_INTERVAL = 500;
+  private final TradingPairEntity tradingPair;
+  private final BinanceService binanceService;
+  private final TradingService tradingService;
+  private final TradingPairRepository tradingPairRepository;
+  private volatile boolean running = true;
+  private BigDecimal lastPrice;
+  private BigDecimal currentLevelPrice;
 
-    public TradingThread(TradingPairEntity tradingPair, BinanceService binanceService, TradingService tradingService, TradingPairRepository tradingPairRepository) {
-        this.tradingPair = tradingPair;
-        this.binanceService = binanceService;
-        this.tradingService = tradingService;
-        this.tradingPairRepository = tradingPairRepository;
+  public TradingThread(TradingPairEntity tradingPair, BinanceService binanceService, TradingService tradingService,
+          TradingPairRepository tradingPairRepository) {
+    this.tradingPair = tradingPair;
+    this.binanceService = binanceService;
+    this.tradingService = tradingService;
+    this.tradingPairRepository = tradingPairRepository;
+  }
+
+  @Override
+  public void run() {
+    log.info("Starting trading thread for {}", tradingPair.getSymbol());
+    BigDecimal startPrice = binanceService.getCurrentPrice(tradingPair);
+
+    if (tradingPair.getStartPrice() == null) {
+      tradingPair.setStartPrice(startPrice);
     }
 
-    @Override
-    public void run() {
-        log.info("Starting trading thread for {}", tradingPair.getSymbol());
-        BigDecimal startPrice = binanceService.getCurrentPrice(tradingPair);
+    tradingPairRepository.save(tradingPair);
+    log.info("Current price for {} set to {}", tradingPair.getSymbol(), startPrice);
 
-        tradingPairRepository.save(tradingPair);
-        log.info("Initial start price for {} set to {}", tradingPair.getSymbol(), startPrice);
+    while (running) {
+      try {
+        BigDecimal currentPrice = binanceService.getCurrentPrice(tradingPair);
 
-
-        while (running) {
-            try {
-                BigDecimal currentPrice = binanceService.getCurrentPrice(tradingPair);
-                if (tradingPair.getStartPrice() == null) {
-                    tradingPair.setStartPrice(currentPrice);
-                }
-                if (lastPrice != null && lastPrice.compareTo(currentPrice) != 0) {
-                    processLevelCrossings(tradingPair, lastPrice, currentPrice);
-                }
-
-                lastPrice = currentPrice;
-                Thread.sleep(TIME_INTERVAL);
-
-            } catch (InterruptedException e) {
-                log.info("Trading thread for {} interrupted", tradingPair.getSymbol());
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                log.error("Error in trading thread for {}: {}", tradingPair.getSymbol(), e.getMessage());
-            }
+        if (lastPrice != null && lastPrice.compareTo(currentPrice) != 0) {
+          processLevelCrossings(tradingPair, lastPrice, currentPrice);
         }
 
-        log.info("Trading thread stopped for {}", tradingPair.getSymbol());
+        lastPrice = currentPrice;
+        Thread.sleep(TIME_INTERVAL);
+
+      } catch (InterruptedException e) {
+        log.info("Trading thread for {} interrupted", tradingPair.getSymbol());
+        Thread.currentThread().interrupt();
+        break;
+      } catch (Exception e) {
+        log.error("Error in trading thread for {}: {}", tradingPair.getSymbol(), e.getMessage());
+      }
     }
 
-    private void processLevelCrossings(TradingPairEntity pair, BigDecimal oldPrice, BigDecimal newPrice) {
-        BigDecimal step = pair.getStartPrice().multiply(pair.getGridLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
+    log.info("Trading thread stopped for {}", tradingPair.getSymbol());
+  }
 
-        BigDecimal newLevelPrice = findGridLevelPrice(pair.getStartPrice(), step, oldPrice, newPrice);
-        if (newLevelPrice != null && (currentLevelPrice == null || !currentLevelPrice.equals(newLevelPrice))) {
-            log.info("Level crossing detected for {}: {} -> {} (Level: {})", pair.getSymbol(), oldPrice, newPrice, newLevelPrice);
+  private void processLevelCrossings(TradingPairEntity pair, BigDecimal oldPrice, BigDecimal newPrice) {
+    BigDecimal step = pair.getStartPrice().multiply(pair.getGridLevelPercentage()).divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
 
-            tradingService.processLevelCrossing(pair, newPrice, newLevelPrice, currentLevelPrice);
-            currentLevelPrice = newLevelPrice;
-        }
+    BigDecimal newLevelPrice = findGridLevelPrice(pair.getStartPrice(), step, oldPrice, newPrice);
+    if (newLevelPrice != null && (currentLevelPrice == null || !currentLevelPrice.equals(newLevelPrice))) {
+      log.info("Level crossing detected for {}: {} -> {} (Level: {})", pair.getSymbol(), oldPrice, newPrice, newLevelPrice);
+
+      tradingService.processLevelCrossing(pair, newPrice, newLevelPrice, currentLevelPrice);
+      currentLevelPrice = newLevelPrice;
+    }
+  }
+
+  public BigDecimal findGridLevelPrice(BigDecimal startPrice, BigDecimal step, BigDecimal oldPrice, BigDecimal newPrice) {
+    int cmp = newPrice.compareTo(oldPrice);
+
+    if (cmp == 0)
+      return null;
+
+    BigDecimal diff = newPrice.subtract(startPrice);
+    BigDecimal n = diff.divide(step, 0, RoundingMode.DOWN);
+    BigDecimal candidate = startPrice.add(n.multiply(step));
+
+    if (cmp > 0) {
+      if (candidate.compareTo(oldPrice) <= 0) {
+        candidate = candidate.add(step);
+      }
+
+      if (candidate.compareTo(oldPrice) > 0 && candidate.compareTo(newPrice) <= 0) {
+        return candidate;
+      }
+    } else {
+      while (candidate.compareTo(newPrice) < 0) {
+        candidate = candidate.add(step);
+      }
+
+      if (candidate.compareTo(oldPrice) < 0) {
+        return candidate;
+      }
     }
 
-    public BigDecimal findGridLevelPrice(BigDecimal startPrice, BigDecimal step, BigDecimal oldPrice, BigDecimal newPrice) {
-        int cmp = newPrice.compareTo(oldPrice);
+    return null;
+  }
 
-        if (cmp == 0) return null;
-
-        BigDecimal diff = newPrice.subtract(startPrice);
-        BigDecimal n = diff.divide(step, 0, RoundingMode.DOWN);
-        BigDecimal candidate = startPrice.add(n.multiply(step));
-
-        if (cmp > 0) {
-            if (candidate.compareTo(oldPrice) <= 0) {
-                candidate = candidate.add(step);
-            }
-
-            if (candidate.compareTo(oldPrice) > 0 && candidate.compareTo(newPrice) <= 0) {
-                return candidate;
-            }
-        } else {
-            while (candidate.compareTo(newPrice) < 0) {
-                candidate = candidate.add(step);
-            }
-
-            if (candidate.compareTo(oldPrice) < 0) {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
-    public void stop() {
-        running = false;
-    }
+  public void stop() {
+    running = false;
+  }
 }
