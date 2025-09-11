@@ -4,12 +4,14 @@ import com.andnor.tradenet.domain.exchange.impl.BinanceService;
 import com.andnor.tradenet.domain.trade.TradingService;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairRepository;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 @Slf4j
+@Getter
 public class TradingThread implements Runnable {
     private static final long TIME_INTERVAL = 500;
     private final TradingPairEntity tradingPair;
