@@ -30,4 +30,6 @@ public interface PositionRepository extends JpaRepository<PositionEntity, Long> 
     @Query("SELECT COUNT(p) > 0 FROM PositionEntity p WHERE p.tradingPair.id = :id AND p.status = 'OPEN'")
     boolean existsByTradingPairId(@Param("id") Long id);
 
+    List<PositionEntity> findAllByTradingPair_Id(Long id);
+
 }

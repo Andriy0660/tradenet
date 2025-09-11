@@ -1,5 +1,6 @@
 package com.andnor.tradenet.domain.exchange.impl;
 
+import com.andnor.tradenet.core.model.SymbolInfo;
 import com.andnor.tradenet.domain.exchange.ExchangeService;
 import com.andnor.tradenet.domain.position.model.PositionStatus;
 import com.andnor.tradenet.domain.position.model.PositionType;
@@ -10,7 +11,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.stereotype.Service;
 
@@ -18,14 +18,15 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class BinanceService implements ExchangeService {
-
     private final ObjectMapper mapper;
     private final UMFuturesClientImpl client;
+    private final Map<String, SymbolInfo> symbolInfoCache;
 
     @Override
     public boolean isHedgeModeEnabled() {
@@ -74,36 +75,38 @@ public class BinanceService implements ExchangeService {
 
         try {
             BigDecimal currentPrice = getCurrentPrice(symbol);
-            BigDecimal rawQuantity = usdAmount.divide(currentPrice, 8, RoundingMode.HALF_UP);
-            BigDecimal quantity = adjustQuantity(symbol, rawQuantity);
 
-            BigDecimal stopLossPrice = calculateStopLoss(entryPrice, type, stopLossPercent);
-            stopLossPrice = adjustPrice(symbol, stopLossPrice);
+            SymbolInfo info = symbolInfoCache.get(symbol);
+            if (info == null) {
+                throw new IllegalStateException("No symbol info found for: " + symbol);
+            }
 
-            LinkedHashMap<String, Object> params = new LinkedHashMap<>();
-            params.put("symbol", symbol);
-            params.put("side", (type == PositionType.LONG) ? "BUY" : "SELL");
-            params.put("type", "MARKET");
-            params.put("quantity", quantity.toPlainString());
-            params.put("positionSide", positionSide);
+            BigDecimal quantity = usdAmount
+                    .divide(currentPrice, 8, RoundingMode.HALF_UP)
+                    .setScale(info.getQuantityPrecision(), RoundingMode.DOWN);
+
+            if (quantity.equals(BigDecimal.ZERO)) {
+                throw new IllegalStateException("Quantity is zero. You should edit trading pair settings");
+            }
+
+            BigDecimal stopLossPrice = calculateStopLoss(entryPrice, type, stopLossPercent)
+                    .setScale(info.getPricePrecision(), RoundingMode.DOWN);
+
+            LinkedHashMap<String, Object> params = getParamsForMarketOrder(type, symbol, quantity, positionSide);
 
             String orderResult = client.account().newOrder(params);
+            JSONObject orderJson = new JSONObject(orderResult);
+            long orderId = orderJson.getLong("orderId");
 
-            JSONObject json = new JSONObject(orderResult);
-            String executedQty = json.getString("executedQty");
-            String avgPrice = json.getString("avgPrice");
+            JSONObject finalOrder = waitForOrderFill(symbol, orderId);
+
+            String executedQty = finalOrder.getString("executedQty");
+            String avgPrice = finalOrder.getString("avgPrice");
 
             log.info("Opened {} {} for {} USDT: qty={}, avgPrice={}",
                      type, symbol, usdAmount, executedQty, avgPrice);
 
-            LinkedHashMap<String, Object> slParams = new LinkedHashMap<>();
-            slParams.put("symbol", symbol);
-            slParams.put("side", (type == PositionType.LONG) ? "SELL" : "BUY");
-            slParams.put("type", "STOP_MARKET");
-            slParams.put("stopPrice", stopLossPrice.toPlainString());
-            slParams.put("closePosition", "true");
-            slParams.put("positionSide", positionSide);
-            slParams.put("workingType", "MARK_PRICE");
+            LinkedHashMap<String, Object> slParams = getParamsForStopMarketOrder(type, symbol, stopLossPrice, positionSide);
 
             String slResult = client.account().newOrder(slParams);
             log.info("Placed STOP LOSS at {} for {} {}", stopLossPrice, type, symbol);
@@ -124,6 +127,51 @@ public class BinanceService implements ExchangeService {
             log.error("Failed to open {} position for {}: {}", type, symbol, e.getMessage(), e);
             throw new RuntimeException("Failed to open position for " + symbol, e);
         }
+    }
+
+    private JSONObject waitForOrderFill(String symbol, long orderId) throws InterruptedException {
+        LinkedHashMap<String, Object> query = new LinkedHashMap<>();
+        query.put("symbol", symbol);
+        query.put("orderId", orderId);
+
+        for (int i = 0; i < 20; i++) {
+            String orderInfo = client.account().queryOrder(query);
+            JSONObject orderJson = new JSONObject(orderInfo);
+            String status = orderJson.getString("status");
+
+            if ("FILLED".equals(status)) {
+                return orderJson;
+            }
+            if (!"NEW".equals(status) && !"PARTIALLY_FILLED".equals(status)) {
+                throw new IllegalStateException("Order " + orderId + " ended with status " + status);
+            }
+
+            Thread.sleep(200);
+        }
+
+        throw new IllegalStateException("Order " + orderId + " not filled in time");
+    }
+
+    private LinkedHashMap<String, Object> getParamsForMarketOrder(PositionType type, String symbol, BigDecimal quantity, String positionSide) {
+        LinkedHashMap<String, Object> params = new LinkedHashMap<>();
+        params.put("symbol", symbol);
+        params.put("side", (type == PositionType.LONG) ? "BUY" : "SELL");
+        params.put("type", "MARKET");
+        params.put("quantity", quantity.toPlainString());
+        params.put("positionSide", positionSide);
+        return params;
+    }
+
+    private LinkedHashMap<String, Object> getParamsForStopMarketOrder(PositionType type, String symbol, BigDecimal stopLossPrice, String positionSide) {
+        LinkedHashMap<String, Object> slParams = new LinkedHashMap<>();
+        slParams.put("symbol", symbol);
+        slParams.put("side", (type == PositionType.LONG) ? "SELL" : "BUY");
+        slParams.put("type", "STOP_MARKET");
+        slParams.put("stopPrice", stopLossPrice.toPlainString());
+        slParams.put("closePosition", "true");
+        slParams.put("positionSide", positionSide);
+        slParams.put("workingType", "MARK_PRICE");
+        return slParams;
     }
 
     private BigDecimal calculateStopLoss(BigDecimal entryPrice, PositionType type, BigDecimal stopLossPercent) {
@@ -148,59 +196,6 @@ public class BinanceService implements ExchangeService {
             throw new RuntimeException("Failed to get current price for " + symbol, e);
         }
     }
-
-    private BigDecimal adjustQuantity(String symbol, BigDecimal quantity) {
-        try {
-            String result = client.market().exchangeInfo();
-            JSONObject json = new JSONObject(result);
-            JSONArray symbols = json.getJSONArray("symbols");
-
-            for (int i = 0; i < symbols.length(); i++) {
-                JSONObject s = symbols.getJSONObject(i);
-                if (s.getString("symbol").equals(symbol)) {
-                    JSONArray filters = s.getJSONArray("filters");
-                    for (int j = 0; j < filters.length(); j++) {
-                        JSONObject f = filters.getJSONObject(j);
-                        if (f.getString("filterType").equals("LOT_SIZE")) {
-                            BigDecimal stepSize = new BigDecimal(f.getString("stepSize"));
-                            int precision = stepSize.stripTrailingZeros().scale();
-                            return quantity.setScale(precision, RoundingMode.DOWN);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Failed to adjust quantity for {}: {}", symbol, e.getMessage());
-        }
-        return quantity.setScale(3, RoundingMode.DOWN);
-    }
-
-    private BigDecimal adjustPrice(String symbol, BigDecimal price) {
-        try {
-            String result = client.market().exchangeInfo();
-            JSONObject json = new JSONObject(result);
-            JSONArray symbols = json.getJSONArray("symbols");
-
-            for (int i = 0; i < symbols.length(); i++) {
-                JSONObject s = symbols.getJSONObject(i);
-                if (s.getString("symbol").equals(symbol)) {
-                    JSONArray filters = s.getJSONArray("filters");
-                    for (int j = 0; j < filters.length(); j++) {
-                        JSONObject f = filters.getJSONObject(j);
-                        if (f.getString("filterType").equals("PRICE_FILTER")) {
-                            BigDecimal tickSize = new BigDecimal(f.getString("tickSize"));
-                            int precision = tickSize.stripTrailingZeros().scale();
-                            return price.setScale(precision, RoundingMode.DOWN);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Failed to adjust price for {}: {}", symbol, e.getMessage());
-        }
-        return price.setScale(2, RoundingMode.DOWN);
-    }
-
 
     @Override
     public void closePosition(PositionEntity positionEntity) {

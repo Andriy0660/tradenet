@@ -1,6 +1,9 @@
 package com.andnor.tradenet.domain.trade;
 
 import com.andnor.tradenet.domain.exchange.impl.BinanceService;
+import com.andnor.tradenet.domain.position.model.PositionStatus;
+import com.andnor.tradenet.domain.position.persistence.PositionEntity;
+import com.andnor.tradenet.domain.position.persistence.PositionRepository;
 import com.andnor.tradenet.domain.trade.thread.TradingThread;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairRepository;
@@ -21,6 +24,7 @@ import java.util.concurrent.Executors;
 @Slf4j
 public class TradingManager {
     private final TradingPairRepository tradingPairRepository;
+    private final PositionRepository positionRepository;
     private final BinanceService binanceService;
     private final Map<String, TradingThread> activeThreads = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
@@ -53,12 +57,34 @@ public class TradingManager {
         log.info("Started trading thread for {}", pair.getSymbol());
     }
 
-    public void stopTrading(String symbol) {
+    public void stopTrading(String symbol, boolean hardStop) {
+        log.info("Stopping trading thread for {}", symbol);
         TradingThread thread = activeThreads.remove(symbol);
         if (thread != null) {
+            TradingPairEntity tradingPair = thread.getTradingPair();
+            closePositions(hardStop, tradingPair);
+            tradingPair.setActive(false);
             thread.stop();
             log.info("Stopped trading thread for {}", symbol);
         }
+    }
+
+    private void closePositions(boolean hardStop, TradingPairEntity tradingPair) {
+        List<PositionEntity> positions = positionRepository.findAllByTradingPair_Id(tradingPair.getId());
+        if (hardStop) {
+            for (PositionEntity position : positions) {
+                try {
+                    binanceService.closePosition(position);
+                    position.setStatus(PositionStatus.CLOSED);
+                } catch (Exception e) {
+                    log.error("Error while closing position {}", position.getId(), e);
+                    position.setStatus(PositionStatus.ERROR);
+                }
+            }
+        } else {
+            positions.forEach(p -> p.setStatus(PositionStatus.CLOSED));
+        }
+        positionRepository.saveAll(positions);
     }
 
     public void stopAllTrading() {
