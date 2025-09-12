@@ -41,6 +41,11 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: start_price
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
                   name: end_price
                   type: DECIMAL(19,8)
               - column:
@@ -57,3 +62,8 @@ databaseChangeLog:
               - column:
                   name: closed_at
                   type: TIMESTAMP
+              - column:
+                  name: stop_loss_order_id
+                  type: BIGINT
+                  constraints:
+                    nullable: true

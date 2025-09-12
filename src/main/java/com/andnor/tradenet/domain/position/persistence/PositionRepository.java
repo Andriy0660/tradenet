@@ -1,6 +1,8 @@
 package com.andnor.tradenet.domain.position.persistence;
 
+import com.andnor.tradenet.domain.position.model.PositionStatus;
 import com.andnor.tradenet.domain.position.model.PositionType;
+import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -32,4 +34,5 @@ public interface PositionRepository extends JpaRepository<PositionEntity, Long> 
 
     List<PositionEntity> findAllByTradingPair_Id(Long id);
 
+  List<PositionEntity> getAllByStatusAndTradingPair(PositionStatus status, TradingPairEntity tradingPair);
 }

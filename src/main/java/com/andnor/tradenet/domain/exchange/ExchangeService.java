@@ -5,6 +5,7 @@ import com.andnor.tradenet.domain.position.persistence.PositionEntity;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public interface ExchangeService {
     boolean isHedgeModeEnabled();
@@ -17,4 +18,6 @@ public interface ExchangeService {
     void closePosition(PositionEntity positionEntity);
 
     BigDecimal getAccountBalance();
+
+    List<Long> getOpenOrderIdsByTradingPair(TradingPairEntity tradingPair);
 }

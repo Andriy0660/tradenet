@@ -22,7 +22,6 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-
 @Getter
 @Setter
 @NoArgsConstructor
@@ -31,40 +30,46 @@ import java.time.Instant;
 @Entity
 @Table(name = "positions")
 public class PositionEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "trading_pair_id")
-    private TradingPairEntity tradingPair;
+  @ManyToOne
+  @JoinColumn(name = "trading_pair_id")
+  private TradingPairEntity tradingPair;
 
-    @Column(name = "grid_level_price")
-    private BigDecimal gridLevelPrice;
+  @Column(name = "grid_level_price")
+  private BigDecimal gridLevelPrice;
 
-    @Column(name = "quantity")
-    private BigDecimal quantity;
+  @Column(name = "quantity")
+  private BigDecimal quantity;
 
-    @Column(name = "type")
-    @Enumerated(EnumType.STRING)
-    private PositionType type;
+  @Column(name = "type")
+  @Enumerated(EnumType.STRING)
+  private PositionType type;
 
-    @Column(name = "status")
-    @Enumerated(EnumType.STRING)
-    private PositionStatus status;
+  @Column(name = "status")
+  @Enumerated(EnumType.STRING)
+  private PositionStatus status;
 
-    @Column(name = "end_price")
-    private BigDecimal endPrice;
+  @Column(name = "start_price")
+  private BigDecimal startPrice;
 
-    @Column(name = "stop_loss_price")
-    private BigDecimal stopLossPrice;
+  @Column(name = "end_price")
+  private BigDecimal endPrice;
 
-    @Column(name = "take_profit_price")
-    private BigDecimal takeProfitPrice;
+  @Column(name = "stop_loss_price")
+  private BigDecimal stopLossPrice;
 
-    @Column(name = "opened_at")
-    private Instant openedAt;
+  @Column(name = "take_profit_price")
+  private BigDecimal takeProfitPrice;
 
-    @Column(name = "closed_at")
-    private Instant closedAt;
+  @Column(name = "opened_at")
+  private Instant openedAt;
+
+  @Column(name = "closed_at")
+  private Instant closedAt;
+
+  @Column(name = "stop_loss_order_id")
+  private Long stopLossOrderId;
 }

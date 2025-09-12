@@ -4,6 +4,7 @@ import com.andnor.tradenet.core.model.SymbolInfo;
 import com.andnor.tradenet.domain.exchange.ExchangeService;
 import com.andnor.tradenet.domain.position.model.PositionStatus;
 import com.andnor.tradenet.domain.position.model.PositionType;
+import com.andnor.tradenet.domain.position.model.StopLossOrderInfo;
 import com.andnor.tradenet.domain.position.persistence.PositionEntity;
 import com.andnor.tradenet.domain.tradingpair.persistence.TradingPairEntity;
 import com.binance.connector.futures.client.impl.UMFuturesClientImpl;
@@ -17,7 +18,9 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -99,23 +102,37 @@ public class BinanceService implements ExchangeService {
 
       log.info("Opened {} {} for {} USDT: qty={}, avgPrice={}", type, symbol, usdAmount, executedQty, avgPrice);
 
-      boolean shouldClosePosition = placeStopLossOrder(symbol, type, stopLossPrice, positionSide, new BigDecimal(executedQty));
+      StopLossOrderInfo stopLossOrderInfo = placeStopLossOrder(symbol, type, stopLossPrice, positionSide, new BigDecimal(executedQty));
       log.info("Placed STOP LOSS at {} for {} {}", stopLossPrice, type, symbol);
 
-      return PositionEntity.builder().tradingPair(tradingPair).gridLevelPrice(entryPrice).quantity(new BigDecimal(executedQty)).type(type)
-              .status(shouldClosePosition ? PositionStatus.CLOSED : PositionStatus.OPEN).stopLossPrice(stopLossPrice).takeProfitPrice(takeProfitPrice).openedAt(Instant.now()).closedAt(shouldClosePosition ? Instant.now() : null).build();
-
+      return PositionEntity.builder()
+              .tradingPair(tradingPair)
+              .gridLevelPrice(entryPrice)
+              .quantity(new BigDecimal(executedQty))
+              .type(type)
+              .startPrice(new BigDecimal(avgPrice).multiply(new BigDecimal(executedQty)))
+              .status(stopLossOrderInfo.getShouldClosePosition() ? PositionStatus.CLOSED : PositionStatus.OPEN)
+              .stopLossPrice(stopLossPrice)
+              .takeProfitPrice(takeProfitPrice)
+              .openedAt(Instant.now())
+              .stopLossOrderId(stopLossOrderInfo.getStopLossOrderId())
+              .closedAt(stopLossOrderInfo.getShouldClosePosition() ? Instant.now() : null)
+              .build();
+//todo: end price
     } catch (Exception e) {
       log.error("Failed to open {} position for {}: {}", type, symbol, e.getMessage(), e);
       throw new RuntimeException("Failed to open position for " + symbol, e);
     }
   }
 
-  private boolean placeStopLossOrder(String symbol, PositionType type, BigDecimal stopLossPrice, String positionSide, BigDecimal executedQty) {
+  private StopLossOrderInfo placeStopLossOrder(String symbol, PositionType type, BigDecimal stopLossPrice, String positionSide, BigDecimal executedQty) {
     try {
-      LinkedHashMap<String, Object> slParams = getParamsForStopMarketOrder(type, symbol, stopLossPrice, positionSide);
-      client.account().newOrder(slParams);
-      return false;
+      LinkedHashMap<String, Object> slParams = getParamsForStopMarketOrder(type, symbol, stopLossPrice, positionSide, executedQty);
+      String newOrderResponse = client.account().newOrder(slParams);
+      JSONObject orderJson = new JSONObject(newOrderResponse);
+      long orderId = orderJson.getLong("orderId");
+
+      return new StopLossOrderInfo(false, orderId);
     } catch (com.binance.connector.futures.client.exceptions.BinanceClientException ex) {
       String errorMessage = ex.getMessage();
       log.error("Error placing STOP LOSS for {}: {}", symbol, errorMessage);
@@ -123,7 +140,7 @@ public class BinanceService implements ExchangeService {
       if (errorMessage != null && errorMessage.contains("\"code\":-2021")) {
         log.warn("STOP LOSS would immediately trigger for {}. Closing position instead.", symbol);
         forceClosePositionByQuantity(symbol, type, positionSide, executedQty);
-        return true;
+        return new StopLossOrderInfo(true, null);
       } else {
         throw ex;
       }
@@ -189,15 +206,15 @@ public class BinanceService implements ExchangeService {
     return params;
   }
 
-  private LinkedHashMap<String, Object> getParamsForStopMarketOrder(PositionType type, String symbol, BigDecimal stopLossPrice, String positionSide) {
+  private LinkedHashMap<String, Object> getParamsForStopMarketOrder(PositionType type, String symbol, BigDecimal stopLossPrice, String positionSide, BigDecimal executedQty) {
     LinkedHashMap<String, Object> slParams = new LinkedHashMap<>();
     slParams.put("symbol", symbol);
     slParams.put("side", (type == PositionType.LONG) ? "SELL" : "BUY");
     slParams.put("type", "STOP_MARKET");
     slParams.put("stopPrice", stopLossPrice.toPlainString());
-    slParams.put("closePosition", "true");
     slParams.put("positionSide", positionSide);
     slParams.put("workingType", "MARK_PRICE");
+    slParams.put("quantity", executedQty);
     return slParams;
   }
 
@@ -237,6 +254,7 @@ public class BinanceService implements ExchangeService {
       String result = client.account().positionInformation(params);
       JsonNode positions = mapper.readTree(result);
 
+      cancelStopLossOrder(symbol, positionEntity.getStopLossOrderId());
       if (positions.isArray()) {
         for (JsonNode pos : positions) {
           String apiPositionSide = pos.get("positionSide").asText();
@@ -270,6 +288,34 @@ public class BinanceService implements ExchangeService {
     }
   }
 
+  private void cancelStopLossOrder(String symbol, Long stopLossOrderId) {
+    try {
+      if (stopLossOrderId == null) {
+        log.info("No stop loss order to cancel for {}", symbol);
+        return;
+      }
+      LinkedHashMap<String, Object> cancelParams = new LinkedHashMap<>();
+      cancelParams.put("symbol", symbol);
+      cancelParams.put("orderId", stopLossOrderId);
+
+      String cancelResult = client.account().cancelOrder(cancelParams);
+      log.info("Cancelled stop loss order {} for {}: {}", stopLossOrderId, symbol, cancelResult);
+    } catch (com.binance.connector.futures.client.exceptions.BinanceClientException ex) {
+      String errorMessage = ex.getMessage();
+
+      if (errorMessage != null && (
+              errorMessage.contains("\"code\":-2011") ||  // Order not found
+                      errorMessage.contains("\"code\":-2013") ||  // Order does not exist
+                      errorMessage.contains("\"code\":-1145"))) { // Order already filled/cancelled
+        log.warn("Stop loss order {} for {} already executed or cancelled: {}", stopLossOrderId, symbol, errorMessage);
+      } else {
+        log.error("Failed to cancel stop loss order {} for {}: {}", stopLossOrderId, symbol, errorMessage);
+      }
+    } catch (Exception ex) {
+      log.error("Unexpected error cancelling stop loss order {} for {}: {}", stopLossOrderId, symbol, ex.getMessage());
+    }
+  }
+
   @Override
   public BigDecimal getAccountBalance() {
     String result = client.account().futuresAccountBalance(new LinkedHashMap<>());
@@ -285,6 +331,35 @@ public class BinanceService implements ExchangeService {
       return BigDecimal.ZERO;
     } catch (Exception e) {
       throw new RuntimeException("Failed to parse balance response: " + result, e);
+    }
+  }
+
+  @Override
+  public List<Long> getOpenOrderIdsByTradingPair(TradingPairEntity tradingPair) {
+    LinkedHashMap<String, Object> params = new LinkedHashMap<>();
+    params.put("symbol", tradingPair.getSymbol());
+
+    try {
+      String responseBody = client.account().currentAllOpenOrders(params);
+      JsonNode ordersArray = mapper.readTree(responseBody);
+
+      List<Long> orderIds = new ArrayList<>();
+
+      if (ordersArray.isArray()) {
+        for (JsonNode order : ordersArray) {
+          if (order.has("orderId")) {
+            Long orderId = order.get("orderId").asLong();
+            orderIds.add(orderId);
+          }
+        }
+      }
+
+      log.info("Found {} open orders for {}", orderIds.size(), tradingPair.getSymbol());
+      return orderIds;
+
+    } catch (Exception e) {
+      log.error("Failed to get open orders for {}: {}", tradingPair.getSymbol(), e.getMessage(), e);
+      throw new RuntimeException("Failed to get open orders for " + tradingPair.getSymbol(), e);
     }
   }
 }
