@@ -1,6 +1,7 @@
 package com.andnor.tradenet.core.config;
 
 import com.andnor.tradenet.core.model.SymbolInfo;
+import com.andnor.tradenet.domain.telegram.service.impl.TelegramBotServiceImpl;
 import com.binance.connector.futures.client.impl.UMFuturesClientImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +10,9 @@ import org.json.JSONObject;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.telegram.telegrambots.meta.TelegramBotsApi;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -85,5 +89,12 @@ public class AppConfig {
         }
         return cache;
     }
+
+  @Bean
+  public TelegramBotsApi telegramBotsApi(TelegramBotServiceImpl arbitrageBot) throws TelegramApiException {
+    TelegramBotsApi api = new TelegramBotsApi(DefaultBotSession.class);
+    api.registerBot(arbitrageBot);
+    return api;
+  }
 
 }

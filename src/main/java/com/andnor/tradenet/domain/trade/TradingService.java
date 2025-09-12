@@ -5,6 +5,8 @@ import com.andnor.tradenet.domain.position.model.PositionStatus;
 import com.andnor.tradenet.domain.position.model.PositionType;
 import com.andnor.tradenet.domain.position.persistence.PositionEntity;
 import com.andnor.tradenet.domain.position.persistence.PositionRepository;
+import com.andnor.tradenet.domain.telegram.model.MessageType;
+import com.andnor.tradenet.domain.telegram.service.MessageService;
 import com.andnor.tradenet.domain.trade.model.AlgorithmAction;
 import com.andnor.tradenet.domain.trade.model.LevelClosingResult;
 import com.andnor.tradenet.domain.trade.util.TradeUtils;
@@ -15,7 +17,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -24,6 +25,7 @@ import java.util.List;
 public class TradingService {
   private final PositionRepository positionRepository;
   private final BinanceService binanceService;
+  private final MessageService messageService;
 
   public void processLevelCrossing(TradingPairEntity pair, BigDecimal currentPrice, BigDecimal newLevelPrice, BigDecimal prevLevelPrice) {
     if (prevLevelPrice == null && pair.getStartPrice().equals(newLevelPrice)) {
@@ -80,7 +82,7 @@ public class TradingService {
           result.incrementClosedShortPositions();
         }
 
-        log.info("Successfully closed position {} with profit", position.getId());
+        messageService.broadcastPositionMessage(MessageType.SUCCESSFULLY_CLOSED_POSITION, position);
 
       } catch (Exception e) {
         log.error("Failed to close position {} for pair {} at level {}: {}", position.getId(), pair.getSymbol(), level, e.getMessage(), e);
@@ -151,7 +153,7 @@ public class TradingService {
       PositionEntity position = binanceService.openPosition(pair, positionType, newLevelPrice, takeProfitLevelPrice);
       positionRepository.save(position);
 
-      log.info("Successfully opened {} position for {} at level {}", positionType, pair.getSymbol(), newLevelPrice);
+      messageService.broadcastPositionMessage(MessageType.SUCCESSFULLY_OPENED_POSITION, position);
 
     } catch (Exception e) {
       log.error("Failed to open {} position for {} at level {}: {}", positionType, pair.getSymbol(), newLevelPrice, e.getMessage(), e);
@@ -167,8 +169,7 @@ public class TradingService {
       PositionEntity position = binanceService.openPosition(pair, positionType, newLevelPrice, takeProfitLevelPrice);
       positionRepository.save(position);
 
-      log.info("Successfully opened counter-trend {} position for {} at level {}", positionType, pair.getSymbol(), newLevelPrice);
-
+      messageService.broadcastPositionMessage(MessageType.SUCCESSFULLY_OPENED_POSITION, position);
     } catch (Exception e) {
       log.error("Failed to open counter-trend {} position for {} at level {}: {}", positionType, pair.getSymbol(), newLevelPrice, e.getMessage(), e);
       throw new RuntimeException("Failed to open counter-trend position", e);

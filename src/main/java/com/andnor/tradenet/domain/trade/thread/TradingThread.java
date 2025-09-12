@@ -13,7 +13,7 @@ import java.math.RoundingMode;
 @Slf4j
 @Getter
 public class TradingThread implements Runnable {
-  private static final long TIME_INTERVAL = 500;
+  private static final long TIME_INTERVAL = 300;
   private final TradingPairEntity tradingPair;
   private final BinanceService binanceService;
   private final TradingService tradingService;
