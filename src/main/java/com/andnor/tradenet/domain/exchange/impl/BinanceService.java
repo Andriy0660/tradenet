@@ -108,7 +108,7 @@ public class BinanceService implements ExchangeService {
               .type(type)
               .usdAmount(new BigDecimal(avgPrice).multiply(new BigDecimal(executedQty)))
               .startPrice(new BigDecimal(avgPrice))
-              .startPrice(stopLossOrderInfo.getShouldClosePosition() ? stopLossOrderInfo.getEndPriceIfForceClosed() : null)
+              .endPrice(stopLossOrderInfo.getShouldClosePosition() ? stopLossOrderInfo.getEndPriceIfForceClosed() : null)
               .status(stopLossOrderInfo.getShouldClosePosition() ? PositionStatus.CLOSED : PositionStatus.OPEN)
               .stopLossPrice(stopLossPrice)
               .takeProfitPrice(takeProfitPrice)
