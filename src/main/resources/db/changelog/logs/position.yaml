@@ -41,6 +41,11 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: usd_amount
+                  type: DECIMAL(19,8)
+                  constraints:
+                    nullable: false
+              - column:
                   name: start_price
                   type: DECIMAL(19,8)
                   constraints:

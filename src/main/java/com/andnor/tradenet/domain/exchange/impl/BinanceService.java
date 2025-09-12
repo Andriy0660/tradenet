@@ -93,12 +93,8 @@ public class BinanceService implements ExchangeService {
 
       String orderResult = client.account().newOrder(params);
       JSONObject orderJson = new JSONObject(orderResult);
-      long orderId = orderJson.getLong("orderId");
-
-      JSONObject finalOrder = waitForOrderFill(symbol, orderId);
-
-      String executedQty = finalOrder.getString("executedQty");
-      String avgPrice = finalOrder.getString("avgPrice");
+      String executedQty = orderJson.getString("executedQty");
+      String avgPrice = orderJson.getString("avgPrice");
 
       log.info("Opened {} {} for {} USDT: qty={}, avgPrice={}", type, symbol, usdAmount, executedQty, avgPrice);
 
@@ -110,7 +106,9 @@ public class BinanceService implements ExchangeService {
               .gridLevelPrice(entryPrice)
               .quantity(new BigDecimal(executedQty))
               .type(type)
-              .startPrice(new BigDecimal(avgPrice).multiply(new BigDecimal(executedQty)))
+              .usdAmount(new BigDecimal(avgPrice).multiply(new BigDecimal(executedQty)))
+              .startPrice(new BigDecimal(avgPrice))
+              .startPrice(stopLossOrderInfo.getShouldClosePosition() ? stopLossOrderInfo.getEndPriceIfForceClosed() : null)
               .status(stopLossOrderInfo.getShouldClosePosition() ? PositionStatus.CLOSED : PositionStatus.OPEN)
               .stopLossPrice(stopLossPrice)
               .takeProfitPrice(takeProfitPrice)
@@ -118,7 +116,6 @@ public class BinanceService implements ExchangeService {
               .stopLossOrderId(stopLossOrderInfo.getStopLossOrderId())
               .closedAt(stopLossOrderInfo.getShouldClosePosition() ? Instant.now() : null)
               .build();
-//todo: end price
     } catch (Exception e) {
       log.error("Failed to open {} position for {}: {}", type, symbol, e.getMessage(), e);
       throw new RuntimeException("Failed to open position for " + symbol, e);
@@ -132,15 +129,15 @@ public class BinanceService implements ExchangeService {
       JSONObject orderJson = new JSONObject(newOrderResponse);
       long orderId = orderJson.getLong("orderId");
 
-      return new StopLossOrderInfo(false, orderId);
+      return new StopLossOrderInfo(false, orderId, null);
     } catch (com.binance.connector.futures.client.exceptions.BinanceClientException ex) {
       String errorMessage = ex.getMessage();
       log.error("Error placing STOP LOSS for {}: {}", symbol, errorMessage);
 
       if (errorMessage != null && errorMessage.contains("\"code\":-2021")) {
         log.warn("STOP LOSS would immediately trigger for {}. Closing position instead.", symbol);
-        forceClosePositionByQuantity(symbol, type, positionSide, executedQty);
-        return new StopLossOrderInfo(true, null);
+        BigDecimal endPrice = forceClosePositionByQuantity(symbol, type, positionSide, executedQty);
+        return new StopLossOrderInfo(true, null, endPrice);
       } else {
         throw ex;
       }
@@ -150,15 +147,18 @@ public class BinanceService implements ExchangeService {
     }
   }
 
-  private void forceClosePositionByQuantity(String symbol, PositionType type, String positionSide, BigDecimal executedQty) {
+  private BigDecimal forceClosePositionByQuantity(String symbol, PositionType type, String positionSide, BigDecimal executedQty) {
     try {
       String orderSide = type == PositionType.LONG ? "SELL" : "BUY";
       LinkedHashMap<String, Object> closeParams = buildClosePositionParams(symbol, positionSide, executedQty, orderSide);
       String closeResult = client.account().newOrder(closeParams);
-
+      JSONObject orderJson = new JSONObject(closeResult);
+      String avgPrice = orderJson.getString("avgPrice");
       log.warn("Force-closed {} position for {} with qty={}: {}", positionSide, symbol, executedQty, closeResult);
+      return new BigDecimal(avgPrice);
     } catch (Exception e) {
       log.error("Failed to force-close {} position for {}: {}", positionSide, symbol, e.getMessage(), e);
+      return null;
     }
   }
 
@@ -169,31 +169,9 @@ public class BinanceService implements ExchangeService {
     closeParams.put("type", "MARKET");
     closeParams.put("quantity", executedQty.toPlainString());
     closeParams.put("positionSide", positionSide);
+    closeParams.put("newOrderRespType", "RESULT");
 
     return closeParams;
-  }
-
-  private JSONObject waitForOrderFill(String symbol, long orderId) throws InterruptedException {
-    LinkedHashMap<String, Object> query = new LinkedHashMap<>();
-    query.put("symbol", symbol);
-    query.put("orderId", orderId);
-
-    for (int i = 0; i < 20; i++) {
-      String orderInfo = client.account().queryOrder(query);
-      JSONObject orderJson = new JSONObject(orderInfo);
-      String status = orderJson.getString("status");
-
-      if ("FILLED".equals(status)) {
-        return orderJson;
-      }
-      if (!"NEW".equals(status) && !"PARTIALLY_FILLED".equals(status)) {
-        throw new IllegalStateException("Order " + orderId + " ended with status " + status);
-      }
-
-      Thread.sleep(200);
-    }
-
-    throw new IllegalStateException("Order " + orderId + " not filled in time");
   }
 
   private LinkedHashMap<String, Object> getParamsForMarketOrder(PositionType type, String symbol, BigDecimal quantity, String positionSide) {
@@ -203,6 +181,7 @@ public class BinanceService implements ExchangeService {
     params.put("type", "MARKET");
     params.put("quantity", quantity.toPlainString());
     params.put("positionSide", positionSide);
+    params.put("newOrderRespType", "RESULT");
     return params;
   }
 
